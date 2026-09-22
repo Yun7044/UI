@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NEON">
+<meta name="theme-color" content="#050510">
+<title>NEON://OS</title>
+<style>
+/* ============ RESET ============ */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --bg: #050510;
+  --cyan: #00f0ff;
+  --pink: #ff0080;
+  --purple: #b026ff;
+  --green: #00ff9f;
+  --yellow: #f0ff00;
+  --text: #d0e8ff;
+  --dim: rgba(208, 232, 255, 0.5);
+  --panel: rgba(0, 20, 40, 0.55);
+  --border: rgba(0, 240, 255, 0.25);
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, "PingFang TC", monospace;
+  font-size: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============ BACKGROUND ============ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(176, 38, 255, 0.28), transparent 55%),
+    radial-gradient(ellipse at 85% 100%, rgba(0, 240, 255, 0.22), transparent 55%),
+    radial-gradient(ellipse at 50% 50%, rgba(255, 0, 128, 0.10), transparent 70%),
+    #050510;
+  z-index: -3;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 240, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.07) 1px, transparent 1px);
+  background-size: 34px 34px;
+  z-index: -2;
+  animation: gridScroll 22s linear infinite;
+  mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 25%, transparent 78%);
+}
+@keyframes gridScroll {
+  from { background-position: 0 0; }
+  to   { background-position: 34px 34px; }
+}
+
+/* ============ OVERLAYS ============ */
+.scanlines {
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px, transparent 2px,
+    rgba(0, 0, 0, 0.16) 3px, rgba(0, 0, 0, 0.16) 4px
+  );
+  pointer-events: none;
+  z-index: 9000;
+  opacity: 0.55;
+}
+
+.scanbar {
+  position: fixed;
+  left: 0; right: 0;
+  top: -120px;
+  height: 120px;
+  background: linear-gradient(180deg, transparent, rgba(0, 240, 255, 0.10), transparent);
+  pointer-events: none;
+  z-index: 9001;
+  animation: scanMove 9s linear infinite;
+}
+@keyframes scanMove {
+  from { transform: translateY(0); }
+  to   { transform: translateY(calc(100vh + 120px)); }
+}
+
+.vignette {
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 10, 0.55) 100%);
+  pointer-events: none;
+  z-index: 9002;
+}
+
+/* ============ BOOT ============ */
+.boot {
+  position: fixed;
+  inset: 0;
+  background: #050510;
+  z-index: 10000;
+  padding: calc(env(safe-area-inset-top) + 50px) 22px 30px;
+  font-size: 11.5px;
+  color: var(--green);
+  text-shadow: 0 0 6px rgba(0, 255, 159, 0.65);
+  overflow: hidden;
+  transition: opacity 0.45s ease;
+}
+.boot.done {
+  opacity: 0;
+  pointer-events: none;
+}
+.boot-line {
+  margin-bottom: 3px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  animation: bootLine 0.25s ease both;
+}
+@keyframes bootLine {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ============ APP ============ */
+.app {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  z-index: 1;
+  padding-top: env(safe-area-inset-top);
+}
+.app.enter {
+  animation: appEnter 0.5s ease both;
+}
+@keyframes appEnter {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Status bar */
+.statusbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 20px 10px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--cyan);
+  text-shadow: 0 0 8px rgba(0, 240, 255, 0.8);
+  flex-shrink: 0;
+}
+.sb-left, .sb-right { display: flex; align-items: center; gap: 8px; }
+.dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+}
+.pulse { animation: pulse 1.6s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+.sb-bat { letter-spacing: -1px; }
+
+/* Pages */
+.pages {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+.page {
+  position: absolute;
+  inset: 0;
+  padding: 12px 20px calc(96px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  will-change: transform;
+}
+.page[data-page="1"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Page head */
+.page-head {
+  border-left: 3px solid var(--cyan);
+  padding-left: 12px;
+  margin-bottom: 18px;
+  flex-shrink: 0;
+}
+.hex-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fff;
+  text-shadow: 0 0 8px var(--cyan), 0 0 22px rgba(0, 240, 255, 0.5);
+}
+.page-sub {
+  font-size: 9.5px;
+  letter-spacing: 3.5px;
+  color: var(--cyan);
+  margin-top: 5px;
+  opacity: 0.72;
+}
+
+/* Search */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(0, 20, 40, 0.5);
+  border: 1px solid var(--border);
+  margin-bottom: 20px;
+  transition: all 0.2s;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+.search:focus-within {
+  border-color: var(--cyan);
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.3), inset 0 0 16px rgba(0, 240, 255, 0.08);
+  background: rgba(0, 30, 55, 0.7);
+}
+.search-icon {
+  color: var(--cyan);
+  text-shadow: 0 0 8px currentColor;
+  font-size: 16px;
+}
+.search input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.search input::placeholder { color: rgba(208, 232, 255, 0.35); }
+
+/* App grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 26px;
+}
+.tile {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid rgba(0, 240, 255, 0.18);
+  color: var(--text);
+  text-decoration: none;
+  position: relative;
+  transition: all 0.15s;
+  clip-path: polygon(0 8px, 8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+  animation: tileIn 0.4s ease both;
+  overflow: hidden;
+}
+.tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 45%, rgba(0, 240, 255, 0.08) 50%, transparent 55%);
+  background-size: 300% 300%;
+  background-position: 100% 100%;
+  transition: background-position 0.6s;
+}
+.tile:active {
+  transform: scale(0.9);
+  border-color: var(--cyan);
+  box-shadow: 0 0 18px rgba(0, 240, 255, 0.45), inset 0 0 18px rgba(0, 240, 255, 0.1);
+}
+.tile:active::before { background-position: 0 0; }
+@keyframes tileIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.tile .icon {
+  font-size: 20px;
+  color: var(--cyan);
+  text-shadow: 0 0 10px currentColor;
+  line-height: 1;
+}
+.tile .label {
+  font-size: 8.5px;
+  letter-spacing: 1.2px;
+  color: rgba(208, 232, 255, 0.7);
+  text-transform: uppercase;
+}
+.tile.fav {
+  border-color: var(--pink);
+  box-shadow: 0 0 15px rgba(255, 0, 128, 0.5);
+}
+.tile.fav .icon { color: var(--pink); text-shadow: 0 0 10px var(--pink); }
+
+/* Sector data */
+.sector-title {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--cyan);
+  opacity: 0.6;
+  margin-bottom: 10px;
+  text-shadow: 0 0 6px currentColor;
+}
+.stat-card {
+  background: rgba(0, 20, 40, 0.5);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--cyan);
+  padding: 12px 14px;
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px dashed rgba(0, 240, 255, 0.1);
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-row span:first-child { color: var(--dim); }
+.stat-row span:last-child { color: var(--cyan); text-shadow: 0 0 6px currentColor; }
+
+/* ============ TERMINAL ============ */
+.terminal {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 8, 16, 0.75);
+  border: 1px solid var(--border);
+  padding: 12px;
+  font-size: 12px;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+}
+.term-output {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  color: var(--green);
+  text-shadow: 0 0 6px rgba(0, 255, 159, 0.45);
+  line-height: 1.55;
+  padding-bottom: 8px;
+  word-break: break-all;
+}
+.term-line { white-space: pre-wrap; }
+.term-line.dim { color: rgba(0, 255, 159, 0.45); }
+.term-line.err { color: var(--pink); text-shadow: 0 0 6px rgba(255, 0, 128, 0.5); }
+.term-line.input { color: var(--cyan); text-shadow: 0 0 6px rgba(0, 240, 255, 0.5); }
+.term-line .hl { color: var(--cyan); }
+.term-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid rgba(0, 240, 255, 0.18);
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+.term-prompt {
+  color: var(--cyan);
+  text-shadow: 0 0 6px currentColor;
+  font-weight: 700;
+}
+.term-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--green);
+  font-family: inherit;
+  font-size: 12px;
+  text-shadow: 0 0 6px rgba(0, 255, 159, 0.5);
+  letter-spacing: 0.5px;
+}
+
+/* ============ CONFIG ============ */
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: rgba(0, 20, 40, 0.5);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--cyan);
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
+}
+.setting-row .label { color: var(--dim); }
+.setting-row .value { color: var(--cyan); text-shadow: 0 0 6px currentColor; }
+.toggle {
+  width: 42px;
+  height: 22px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--cyan);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.toggle.on::after { left: calc(100% - 18px); }
+
+/* ============ DOCK ============ */
+.dock {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, rgba(5, 5, 16, 0.98), rgba(5, 5, 16, 0.75) 65%, transparent);
+  z-index: 100;
+}
+.dock::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 12%;
+  right: 12%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+  box-shadow: 0 0 10px var(--cyan);
+}
+.dock-btn {
+  background: none;
+  border: none;
+  color: rgba(208, 232, 255, 0.4);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 18px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.dock-btn.active {
+  color: var(--cyan);
+  text-shadow: 0 0 10px currentColor;
+}
+.dock-btn.active .db-icon {
+  filter: drop-shadow(0 0 8px var(--cyan));
+}
+.db-icon { font-size: 17px; line-height: 1; }
+.db-label { font-size: 8.5px; letter-spacing: 1.5px; }
+
+/* ============ RADIAL MENU ============ */
+.radial {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.22s;
+}
+.radial.active {
+  pointer-events: auto;
+  opacity: 1;
+}
+.radial.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 5, 16, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: fadeIn 0.22s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.radial-center {
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  margin: -31px 0 0 -31px;
+  border-radius: 50%;
+  border: 2px solid var(--cyan);
+  box-shadow: 0 0 22px var(--cyan), inset 0 0 22px rgba(0, 240, 255, 0.35);
+  animation: radialPulse 1.4s infinite;
+  pointer-events: none;
+}
+@keyframes radialPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.12); opacity: 0.7; }
+}
+.radial-btn {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  border-radius: 50%;
+  background: rgba(0, 18, 34, 0.95);
+  border: 1px solid var(--pink);
+  box-shadow: 0 0 14px rgba(255, 0, 128, 0.55), inset 0 0 12px rgba(255, 0, 128, 0.15);
+  color: var(--pink);
+  font-family: inherit;
+  font-size: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  animation: radialIn 0.32s backwards cubic-bezier(0.2, 1.5, 0.5, 1);
+}
+@keyframes radialIn {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+.rb-label {
+  font-size: 6px;
+  margin-top: 2px;
+  letter-spacing: 0.8px;
+  opacity: 0.85;
+}
+
+/* ============ RIPPLES ============ */
+.ripples {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9500;
+}
+.ripple {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border: 2px solid var(--cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 14px currentColor;
+  animation: rippleOut 0.8s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes rippleOut {
+  from { transform: scale(0.15); opacity: 1; }
+  to   { transform: scale(5); opacity: 0; }
+}
+
+/* ============ TOAST ============ */
+.toast {
+  position: fixed;
+  bottom: calc(110px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(0, 18, 34, 0.96);
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  padding: 10px 20px;
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  text-shadow: 0 0 8px currentColor;
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+  opacity: 0;
+  transition: all 0.3s;
+  z-index: 9999;
+  pointer-events: none;
+  white-space: nowrap;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ============ GLITCH ============ */
+body.glitching .app,
+body.glitching .boot {
+  animation: glitchShake 0.42s steps(2) both;
+}
+@keyframes glitchShake {
+  0%   { transform: translate(0, 0); }
+  10%  { transform: translate(-4px, 2px); }
+  20%  { transform: translate(4px, -3px); }
+  30%  { transform: translate(-3px, -2px); }
+  40%  { transform: translate(3px, 3px); }
+  50%  { transform: translate(-4px, 0); }
+  60%  { transform: translate(4px, 0); }
+  70%  { transform: translate(0, 2px); }
+  80%  { transform: translate(0, -2px); }
+  100% { transform: translate(0, 0); }
+}
+</style>
+</head>
+<body>
+
+<!-- Overlays -->
+<div class="scanlines"></div>
+<div class="scanbar"></div>
+<div class="vignette"></div>
+
+<!-- Boot -->
+<div class="boot" id="boot">
+  <div id="bootLog"></div>
+</div>
+
+<!-- App -->
+<div class="app" id="app" style="display:none">
+
+  <div class="statusbar">
+    <div class="sb-left">
+      <span class="dot pulse"></span>
+      <span>NEON_OS</span>
+    </div>
+    <div class="sb-right">
+      <span id="sbTime">--:--</span>
+      <span class="sb-bat">▮▮▮</span>
+    </div>
+  </div>
+
+  <div class="pages" id="pages">
+
+    <!-- PAGE 0: NEXUS -->
+    <section class="page active" data-page="0">
+      <div class="page-head">
+        <div class="hex-title">// NEXUS</div>
+        <div class="page-sub" id="greet">INITIALIZING…</div>
+      </div>
+
+      <form class="search" id="searchForm" onsubmit="return false;">
+        <span class="search-icon">▸</span>
+        <input type="search" id="q" placeholder="search the grid…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      </form>
+
+      <div class="grid" id="grid"></div>
+
+      <div class="sector-title">// SECTOR DATA</div>
+      <div class="stat-card">
+        <div class="stat-row"><span>SYS.UPTIME</span><span id="uptime">00:00:00</span></div>
+        <div class="stat-row"><span>NET.NODE</span><span>NEO-TOKYO-07</span></div>
+        <div class="stat-row"><span>PWR.LEVEL</span><span id="pwr">98.4%</span></div>
+        <div class="stat-row"><span>LINK.STATUS</span><span>STABLE</span></div>
+      </div>
+    </section>
+
+    <!-- PAGE 1: TERMINAL -->
+    <section class="page" data-page="1">
+      <div class="page-head">
+        <div class="hex-title">// SHELL</div>
+        <div class="page-sub">SECURE TERMINAL</div>
+      </div>
+
+      <div class="terminal">
+        <div class="term-output" id="termOutput">
+          <div class="term-line dim">NEON://OS v2.077 — SECURE SHELL</div>
+          <div class="term-line dim">輸入 <span class="hl">help</span> 查看指令</div>
+        </div>
+        <div class="term-input-row">
+          <span class="term-prompt">›</span>
+          <input class="term-input" id="termInput" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type a command…">
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 2: CONFIG -->
+    <section class="page" data-page="2">
+      <div class="page-head">
+        <div class="hex-title">// CONFIG</div>
+        <div class="page-sub">SYSTEM PARAMETERS</div>
+      </div>
+
+      <div class="setting-row">
+        <span class="label">AUDIO.FEEDBACK</span>
+        <div class="toggle on" id="tgSound"></div>
+      </div>
+      <div class="setting-row">
+        <span class="label">HAPTIC.PULSE</span>
+        <div class="toggle on" id="tgHaptic"></div>
+      </div>
+      <div class="setting-row">
+        <span class="label">THEME.CORE</span>
+        <span class="value" id="themeName" style="font-size:11px;">CYAN</span>
+      </div>
+      <div class="setting-row" id="btnTheme">
+        <span class="label">› 切換主題</span>
+        <span class="value">CYCLE</span>
+      </div>
+      <div class="setting-row" id="btnGlitch">
+        <span class="label">› 觸發故障</span>
+        <span class="value">EXEC</span>
+      </div>
+      <div class="setting-row" id="btnReset">
+        <span class="label">› 重置系統</span>
+        <span class="value" style="color:var(--pink);">FORMAT</span>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- DOCK -->
+  <nav class="dock" id="dock">
+    <button class="dock-btn active" data-i="0">
+      <span class="db-icon">◆</span>
+      <span class="db-label">NEXUS</span>
+    </button>
+    <button class="dock-btn" data-i="1">
+      <span class="db-icon">▸_</span>
+      <span class="db-label">SHELL</span>
+    </button>
+    <button class="dock-btn" data-i="2">
+      <span class="db-icon">⚙</span>
+      <span class="db-label">CONFIG</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- Radial -->
+<div class="radial" id="radial"></div>
+
+<!-- Ripples -->
+<div class="ripples" id="ripples"></div>
+
+<script>
+/* ============================================================
+   AUDIO
+============================================================ */
+let audioCtx = null;
+let soundOn = true;
+
+function initAudio() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+
+function beep(freq = 800, dur = 0.05, type = 'square', vol = 0.035) {
+  if (!soundOn) return;
+  try {
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur);
+  } catch (e) {}
+}
+
+document.addEventListener('touchstart', initAudio, { once: true, passive: true });
+
+/* ============================================================
+   RIPPLE
+============================================================ */
+const rippleLayer = document.getElementById('ripples');
+
+function ripple(x, y, color = 'var(--cyan)') {
+  const r = document.createElement('div');
+  r.className = 'ripple';
+  r.style.left = x + 'px';
+  r.style.top = y + 'px';
+  r.style.color = color;
+  r.style.borderColor = color;
+  rippleLayer.appendChild(r);
+  setTimeout(() => r.remove(), 850);
+}
+
+/* ============================================================
+   TOAST
+============================================================ */
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => {
+    t.classList.remove('show');
+    setTimeout(() => t.remove(), 320);
+  }, 1500);
+}
+
+/* ============================================================
+   GLITCH
+============================================================ */
+function glitch() {
+  document.body.classList.add('glitching');
+  beep(110, 0.18, 'sawtooth', 0.05);
+  setTimeout(() => document.body.classList.remove('glitching'), 420);
+}
+
+/* ============================================================
+   PAGE LAYOUT
+============================================================ */
+const pageEls = [...document.querySelectorAll('.page')];
+const dockBtns = [...document.querySelectorAll('.dock-btn')];
+let currentPage = 0;
+
+function layoutPages(animate = true, offset = 0) {
+  pageEls.forEach((p, i) => {
+    p.style.transition = animate
+      ? 'transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1)'
+      : 'none';
+    const base = (i - currentPage) * 100;
+    if (offset === 0) {
+      p.style.transform = `translateX(${base}%)`;
+    } else {
+      p.style.transform = `translateX(calc(${base}% + ${offset}px))`;
+    }
+  });
+}
+
+function setActivePage(idx) {
+  if (idx < 0 || idx >= pageEls.length) return;
+  currentPage = idx;
+  layoutPages(true);
+  dockBtns.forEach((b, i) => b.classList.toggle('active', i === idx));
+  beep(620 + idx * 90, 0.045);
+  if (idx !== 1) {
+    document.getElementById('termInput').blur();
+  }
+}
+
+/* ============================================================
+   SWIPE BETWEEN PAGES
+============================================================ */
+let tStartX = 0, tStartY = 0;
+let tCanSwipe = false;
+let tHorizontal = false;
+let tLastDx = 0;
+let justSwiped = false;
+
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) return;
+  const t = e.touches[0];
+  tStartX = t.clientX;
+  tStartY = t.clientY;
+  tLastDx = 0;
+  tHorizontal = false;
+  tCanSwipe = !e.target.closest('.dock, input, textarea, .radial');
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (!tCanSwipe || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  const dx = t.clientX - tStartX;
+  const dy = t.clientY - tStartY;
+
+  if (!tHorizontal) {
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+      tHorizontal = true;
+    } else if (Math.abs(dy) > 10) {
+      return;
+    }
+  }
+
+  if (tHorizontal) {
+    tLastDx = dx;
+    layoutPages(false, dx);
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  if (tHorizontal) {
+    let target = currentPage;
+    if (tLastDx < -55 && currentPage < pageEls.length - 1) target = currentPage + 1;
+    else if (tLastDx > 55 && currentPage > 0) target = currentPage - 1;
+    currentPage = target;
+    layoutPages(true);
+    dockBtns.forEach((b, i) => b.classList.toggle('active', i === target));
+    beep(620 + target * 90, 0.045);
+    justSwiped = true;
+    setTimeout(() => { justSwiped = false; }, 320);
+  }
+  tHorizontal = false;
+  tLastDx = 0;
+}, { passive: true });
+
+document.addEventListener('touchcancel', () => {
+  tHorizontal = false;
+  tLastDx = 0;
+}, { passive: true });
+
+/* Block clicks right after swipe */
+document.addEventListener('click', (e) => {
+  if (justSwiped) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
+/* ============================================================
+   DOCK
+============================================================ */
+dockBtns.forEach((b, i) => {
+  b.addEventListener('click', () => setActivePage(i));
+});
+
+/* ============================================================
+   TILES
+============================================================ */
+const APPS = [
+  { icon: '▶', label: 'YT',    url: 'https://m.youtube.com' },
+  { icon: '◎', label: 'IG',    url: 'https://www.instagram.com' },
+  { icon: '♫', label: 'MUSIC', url: 'https://music.youtube.com' },
+  { icon: '◈', label: 'MAPS',  url: 'https://maps.google.com' },
+  { icon: '✉', label: 'MAIL',  url: 'https://mail.google.com' },
+  { icon: '◐', label: 'REDDIT',url: 'https://www.reddit.com' },
+  { icon: '✦', label: 'NEWS',  url: 'https://news.google.com' },
+  { icon: '⚡', label: 'X',     url: 'https://x.com' },
+];
+
+function buildGrid() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  APPS.forEach((app, i) => {
+    const el = document.createElement('a');
+    el.className = 'tile';
+    el.href = app.url;
+    el.target = '_blank';
+    el.rel = 'noopener noreferrer';
+    el.style.animationDelay = (i * 0.035) + 's';
+    el.dataset.label = app.label;
+    el.innerHTML = `<span class="icon">${app.icon}</span><span class="label">${app.label}</span>`;
+    grid.appendChild(el);
+  });
+}
+
+/* ============================================================
+   RADIAL MENU (long press)
+============================================================ */
+const radial = document.getElementById('radial');
+let lpTimer = null;
+let lpTarget = null;
+let lpStart = null;
+
+document.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) return;
+  const card = e.target.closest('.tile, .stat-card, .setting-row');
+  if (!card) return;
+  lpTarget = card;
+  lpStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => {
+    if (lpTarget && lpStart) {
+      beep(180, 0.1, 'sawtooth', 0.06);
+      showRadial(lpStart.x, lpStart.y, lpTarget);
+      lpTarget = null;
+    }
+  }, 480);
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (lpTimer && lpStart && e.touches.length === 1) {
+    const dx = Math.abs(e.touches[0].clientX - lpStart.x);
+    const dy = Math.abs(e.touches[0].clientY - lpStart.y);
+    if (dx > 8 || dy > 8) {
+      clearTimeout(lpTimer);
+      lpTimer = null;
+      lpTarget = null;
+    }
+  }
+}, { passive: true });
+
+document.addEventListener('touchend', () => {
+  clearTimeout(lpTimer);
+  lpTimer = null;
+  lpTarget = null;
+  lpStart = null;
+}, { passive: true });
+
+function showRadial(x, y, card) {
+  radial.innerHTML = '';
+  const items = [
+    { icon: '▶', label: 'OPEN',  action: 'open' },
+    { icon: '★', label: 'FAV',   action: 'fav' },
+    { icon: '⤴', label: 'SEND',  action: 'share' },
+    { icon: 'ⓘ', label: 'INFO',  action: 'info' },
+    { icon: '⌦', label: 'DEL',   action: 'del' },
+    { icon: '⚙', label: 'CFG',   action: 'cfg' },
+  ];
+  const R = Math.min(96, Math.max(80, window.innerWidth / 3.6));
+
+  const center = document.createElement('div');
+  center.className = 'radial-center';
+  center.style.left = x + 'px';
+  center.style.top = y + 'px';
+  radial.appendChild(center);
+
+  items.forEach((item, i) => {
+    const angle = (i / items.length) * Math.PI * 2 - Math.PI / 2;
+    const bx = x + Math.cos(angle) * R;
+    const by = y + Math.sin(angle) * R;
+    const btn = document.createElement('button');
+    btn.className = 'radial-btn';
+    btn.style.left = bx + 'px';
+    btn.style.top = by + 'px';
+    btn.style.animationDelay = (i * 0.025) + 's';
+    btn.innerHTML = `<span>${item.icon}</span><span class="rb-label">${item.label}</span>`;
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      beep(920, 0.05);
+      handleRadialAction(item.action, card);
+    });
+    radial.appendChild(btn);
+  });
+
+  radial.classList.add('active');
+}
+
+function hideRadial() {
+  radial.classList.remove('active');
+  setTimeout(() => { radial.innerHTML = ''; }, 260);
+}
+
+radial.addEventListener('click', (e) => {
+  if (e.target === radial) hideRadial();
+});
+
+function handleRadialAction(action, el) {
+  hideRadial();
+  switch (action) {
+    case 'open':
+      if (el.tagName === 'A' && el.href) {
+        window.open(el.href, '_blank', 'noopener');
+      } else {
+        toast('NO LINK');
+      }
+      break;
+    case 'fav':
+      el.classList.toggle('fav');
+      toast(el.classList.contains('fav') ? 'ADDED ★' : 'REMOVED ☆');
+      break;
+    case 'share':
+      if (el.href && navigator.clipboard) {
+        navigator.clipboard.writeText(el.href).catch(() => {});
+        toast('LINK COPIED');
+      } else {
+        toast('NOTHING TO SHARE');
+      }
+      break;
+    case 'info':
+      toast('NODE :: ' + (el.dataset.label || 'UNKNOWN'));
+      break;
+    case 'del':
+      el.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+      el.style.transform = 'scale(0) rotate(180deg)';
+      el.style.opacity = '0';
+      beep(140, 0.2, 'sawtooth', 0.06);
+      setTimeout(() => el.remove(), 320);
+      break;
+    case 'cfg':
+      setActivePage(2);
+      break;
+  }
+}
+
+/* ============================================================
+   DOUBLE TAP → GLITCH
+============================================================ */
+let lastTap = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  const isBlank = !e.target.closest('a, button, input, .tile, .dock-btn, .radial-btn');
+  if (now - lastTap < 280 && isBlank && !justSwiped) {
+    glitch();
+    lastTap = 0;
+  } else {
+    lastTap = now;
+  }
+}, { passive: true });
+
+/* ============================================================
+   CLOCK / UPTIME
+============================================================ */
+const bootTime = Date.now();
+
+function updateClock() {
+  const d = new Date();
+  document.getElementById('sbTime').textContent =
+    String(d.getHours()).padStart(2, '0') + ':' +
+    String(d.getMinutes()).padStart(2, '0');
+
+  const hr = d.getHours();
+  const greet = hr < 5 ? 'NIGHT_PROTOCOL' : hr < 12 ? 'GOOD_MORNING' : hr < 18 ? 'AFTERNOON_LINK' : 'EVENING_LINK';
+  const g = document.getElementById('greet');
+  if (g) g.textContent = greet + ' · ' + d.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+}
+
+function updateUptime() {
+  const s = Math.floor((Date.now() - bootTime) / 1000);
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  const el = document.getElementById('uptime');
+  if (el) el.textContent = `${h}:${m}:${ss}`;
+}
+
+/* ============================================================
+   TERMINAL
+============================================================ */
+const termInput = document.getElementById('termInput');
+const termOutput = document.getElementById('termOutput');
+
+function addTermLine(text, cls = '') {
+  const line = document.createElement('div');
+  line.className = 'term-line' + (cls ? ' ' + cls : '');
+  line.textContent = text;
+  termOutput.appendChild(line);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+function runCommand(raw) {
+  const cmd = raw.trim().toLowerCase();
+  if (!cmd) return;
+  addTermLine('› ' + raw, 'input');
+
+  const fn = COMMANDS[cmd];
+  if (fn) {
+    const out = fn();
+    if (Array.isArray(out)) out.forEach(l => addTermLine(l));
+  } else {
+    addTermLine('command not found: ' + cmd, 'err');
+    beep(180, 0.09, 'sawtooth', 0.05);
+  }
+}
+
+const COMMANDS = {
+  help: () => [
+    '可用指令：',
+    '  help      — 顯示說明',
+    '  clear     — 清空終端',
+    '  time      — 目前時間',
+    '  whoami    — 身份查詢',
+    '  ls        — 列出節點',
+    '  glitch    — 觸發故障',
+    '  hack      — 入侵序列',
+    '  matrix    — 資料雨',
+    '  theme     — 切換主題',
+    '  about     — 關於系統',
+    '  exit      — 返回 NEXUS',
+  ],
+  clear: () => { termOutput.innerHTML = ''; return null; },
+  time: () => [new Date().toString()],
+  whoami: () => ['user@neon-grid', '權限：ROOT'],
+  ls: () => [
+    'drwxr-xr-x   /dev/',
+    'drwxr-xr-x   /sys/',
+    '-rw-r--r--   readme.txt',
+    '-rwx------   .secret',
+  ],
+  about: () => [
+    'NEON://OS v2.077',
+    '構建於賽博空間 · 永不停機',
+    '© 2077 NEON INDUSTRIES',
+  ],
+  glitch: () => { setTimeout(glitch, 80); return ['> EXECUTING GLITCH...']; },
+  hack: () => {
+    const steps = [
+      '> 掃描節點 ...',
+      '> 發現 3 個目標',
+      '> 注入載荷 ...',
+      '> 繞過防火牆 ...',
+      '> 取得 root 權限 ...',
+      '> 存取被拒 :)',
+      '> 開玩笑的，全部搞定。',
+    ];
+    let i = 0;
+    const run = () => {
+      if (i >= steps.length) return;
+      addTermLine(steps[i], i === 5 ? 'err' : '');
+      beep(380 + i * 120, 0.04);
+      i++;
+      setTimeout(run, 260);
+    };
+    setTimeout(run, 120);
+    return null;
+  },
+  matrix: () => {
+    const chars = '01アイウエオカキクケコサシスセソタチツテト';
+    let count = 0;
+    const iv = setInterval(() => {
+      let line = '';
+      for (let i = 0; i < 42; i++) line += chars[Math.floor(Math.random() * chars.length)];
+      addTermLine(line, 'dim');
+      count++;
+      if (count >= 10) clearInterval(iv);
+    }, 85);
+    return null;
+  },
+  theme: () => { cycleTheme(); return ['> 主題已切換']; },
+  exit: () => { setTimeout(() => setActivePage(0), 120); return null; },
+};
+
+termInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const v = termInput.value;
+    termInput.value = '';
+    runCommand(v);
+  }
+});
+
+/* ============================================================
+   THEME
+============================================================ */
+const THEMES = [
+  { name: 'CYAN',   primary: '#00f0ff', secondary: '#ff0080', accent: '#00ff9f' },
+  { name: 'PINK',   primary: '#ff0080', secondary: '#b026ff', accent: '#00f0ff' },
+  { name: 'PURPLE', primary: '#b026ff', secondary: '#00f0ff', accent: '#ff0080' },
+  { name: 'LIME',   primary: '#00ff9f', secondary: '#f0ff00', accent: '#00f0ff' },
+];
+let themeIndex = 0;
+
+function applyTheme(i) {
+  themeIndex = ((i % THEMES.length) + THEMES.length) % THEMES.length;
+  const t = THEMES[themeIndex];
+  document.documentElement.style.setProperty('--cyan', t.primary);
+  document.documentElement.style.setProperty('--pink', t.secondary);
+  document.documentElement.style.setProperty('--green', t.accent);
+  const el = document.getElementById('themeName');
+  if (el) el.textContent = t.name;
+}
+
+function cycleTheme() {
+  applyTheme(themeIndex + 1);
+  toast('THEME :: ' + THEMES[themeIndex].name);
+  beep(520, 0.06, 'sine', 0.05);
+}
+
+/* ============================================================
+   CONFIG PAGE
+============================================================ */
+document.getElementById('tgSound').addEventListener('click', function () {
+  this.classList.toggle('on');
+  soundOn = this.classList.contains('on');
+  beep(880, 0.06);
+  toast('AUDIO :: ' + (soundOn ? 'ON' : 'OFF'));
+});
+
+document.getElementById('tgHaptic').addEventListener('click', function () {
+  this.classList.toggle('on');
+  if (this.classList.contains('on') && navigator.vibrate) navigator.vibrate(20);
+  toast('HAPTIC :: ' + (this.classList.contains('on') ? 'ON' : 'OFF'));
+});
+
+document.getElementById('btnTheme').addEventListener('click', () => {
+  cycleTheme();
+});
+
+document.getElementById('btnGlitch').addEventListener('click', () => {
+  glitch();
+  toast('GLITCH EXECUTED');
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  beep(120, 0.3, 'sawtooth', 0.06);
+  toast('SYSTEM RESET...');
+  setTimeout(() => location.reload(), 800);
+});
+
+/* ============================================================
+   SEARCH
+============================================================ */
+document.getElementById('q').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const v = e.target.value.trim();
+    if (v) {
+      window.open('https://www.google.com/search?q=' + encodeURIComponent(v), '_blank', 'noopener');
+      e.target.value = '';
+    }
+  }
+});
+
+/* ============================================================
+   GLOBAL RIPPLE ON TAP
+============================================================ */
+document.addEventListener('touchstart', (e) => {
+  const el = e.target.closest('.tile, .dock-btn, .toggle, .setting-row, button, a');
+  if (!el) return;
+  const t = e.touches[0];
+  if (!t) return;
+  const color = el.classList.contains('fav') ? 'var(--pink)' : 'var(--cyan)';
+  ripple(t.clientX, t.clientY, color);
+}, { passive: true });
+
+/* ============================================================
+   BOOT SEQUENCE
+============================================================ */
+const BOOT_LINES = [
+  '> NEON://OS BIOS v2.077',
+  '> CHECKING MEMORY .......... OK',
+  '> LOADING KERNEL MODULES ... OK',
+  '> MOUNTING /dev/grid ....... OK',
+  '> ESTABLISHING UPLINK ...... OK',
+  '> INJECTING NEURAL LINK ....',
+  '> AUTHENTICATING USER ...... OK',
+  '> SYSTEM ONLINE',
+  '',
+  '  歡迎回來，使用者。',
+];
+
+function boot() {
+  const log = document.getElementById('bootLog');
+  let i = 0;
+  const next = () => {
+    if (i >= BOOT_LINES.length) {
+      setTimeout(finishBoot, 380);
+      return;
+    }
+    const line = document.createElement('div');
+    line.className = 'boot-line';
+    line.textContent = BOOT_LINES[i];
+    log.appendChild(line);
+    i++;
+    setTimeout(next, 95 + Math.random() * 90);
+  };
+  next();
+}
+
+function finishBoot() {
+  document.getElementById('boot').classList.add('done');
+  const app = document.getElementById('app');
+  app.style.display = 'flex';
+  app.classList.add('enter');
+
+  // init
+  currentPage = 0;
+  layoutPages(false);
+  buildGrid();
+  updateClock();
+  updateUptime();
+  setInterval(updateClock, 1000);
+  setInterval(updateUptime, 1000);
+
+  setTimeout(() => {
+    beep(880, 0.08, 'sine', 0.05);
+    setTimeout(() => beep(1320, 0.1, 'sine', 0.05), 90);
+  }, 200);
+}
+
+/* ============================================================
+   START
+============================================================ */
+boot();
+
+/* prevent pull-to-refresh / bounce */
+document.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false });
+
+/* double-tap zoom prevention */
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) e.preventDefault();
+  lastTouchEnd = now;
+}, false);
+</script>
+</body>
+</html>
