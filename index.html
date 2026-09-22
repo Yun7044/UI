@@ -2,40 +2,41 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Rhythm Engine Prototype</title>
 <style>
   html,body{margin:0;padding:0;overflow:hidden;background:#05060a;
     font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;color:#fff;
-    -webkit-user-select:none;user-select:none;touch-action:none;}
-  canvas{display:block;}
+    -webkit-user-select:none;user-select:none;touch-action:none;
+    width:100%;height:100%;}
+  canvas{display:block;width:100%;height:100%;}
 
   #hud{position:fixed;top:14px;left:16px;z-index:20;pointer-events:none;
-    text-shadow:0 2px 8px #000;line-height:1.5;font-size:14px;}
+    text-shadow:0 2px 8px #000;line-height:1.4;font-size:14px;}
   #hud .score{font-size:28px;font-weight:800;letter-spacing:1px;}
   #hud .combo{font-size:18px;color:#7fe7ff;font-weight:700;}
 
-  #judge{position:fixed;left:50%;top:52%;transform:translate(-50%,-50%);
-    z-index:20;pointer-events:none;font-size:40px;font-weight:900;
-    letter-spacing:2px;opacity:0;text-shadow:0 0 18px currentColor;}
+  #judge{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    z-index:20;pointer-events:none;font-size:46px;font-weight:900;
+    letter-spacing:2px;opacity:0;text-shadow:0 0 22px currentColor;}
   @keyframes pop{
     0%{opacity:0;transform:translate(-50%,-50%) scale(.6);}
     20%{opacity:1;transform:translate(-50%,-50%) scale(1.08);}
     100%{opacity:0;transform:translate(-50%,-50%) scale(1);}
   }
 
-#zones{
-  position:fixed;left:0;right:0;bottom:0;height:38%;display:flex;
-  z-index:10;
-}
-#zones .tz{
-  flex:1;
-  pointer-events:auto;
-  touch-action:none;
-}
+  #zones{
+    position:fixed;inset:0;display:flex;z-index:10;
+  }
+  #zones .tz{
+    flex:1;
+    pointer-events:auto;
+    touch-action:none;
+  }
+
   #menu{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;
     align-items:center;justify-content:center;gap:18px;
-    background:radial-gradient(circle at 50% 40%,#131a2e,#05060a 70%);}
+    background:radial-gradient(circle at 50% 40%,#131a2e,#05060a 80%);}
   #menu h1{margin:0;font-size:32px;letter-spacing:4px;
     background:linear-gradient(90deg,#5ad2ff,#a87bff,#ff5f8f);
     -webkit-background-clip:text;background-clip:text;color:transparent;}
@@ -68,7 +69,7 @@
 
 <div id="menu">
   <h1>RHYTHM ENGINE</h1>
-  <p>D · F · J · K ／ 點擊下方四區</p>
+  <p>點擊任意位置 ／ 四區觸控</p>
   <button id="startBtn">開 始</button>
   <div id="result">
     <div class="big" id="rScore">0</div>
@@ -84,16 +85,16 @@
 import * as THREE from 'three';
 
 /* =========================================================
-   常數
+   常數 (已調整改變遊戲手感)
 ========================================================= */
 const LANES      = 4;
 const LANE_COLOR = [0x5ad2ff, 0xa87bff, 0xffc93c, 0xff5f8f];
-const SPACING    = 2.4;
+const SPACING    = 3.8;        // 加寬軌道，填滿螢幕
 const LANE_X     = Array.from({length:LANES}, (_,i)=> (i-(LANES-1)/2)*SPACING);
-const SPEED      = 15;          // 每秒移動多少世界單位
+const SPEED      = 30;         // 大幅提升速度 (原本15，現在30，接近世界計畫10.95)
 const BPM        = 128;
 const SPB        = 60/BPM;
-const LEAD       = 1.0;         // 音樂前奏秒數
+const LEAD       = 1.0;        // 音樂前奏秒數
 
 /* =========================================================
    3D 場景
@@ -102,9 +103,9 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060a);
 scene.fog = new THREE.Fog(0x05060a, 35, 95);
 
-const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 300);
-camera.position.set(0, 6.5, 17);
-camera.lookAt(0, .5, -14);
+const camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, .1, 300);
+camera.position.set(0, 7.5, 18);   // 相機拉近
+camera.lookAt(0, .5, -18);         // 看向更遠處
 
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -119,15 +120,29 @@ const rim = new THREE.DirectionalLight(0xff5f8f, .7);
 rim.position.set(-10, 6, -10);
 scene.add(rim);
 
+/* ---- 背景星空 (增加全螢幕沉浸感) ---- */
+const starGeo = new THREE.BufferGeometry();
+const starCount = 1500;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i += 3) {
+  starPos[i] = (Math.random() - 0.5) * 200;
+  starPos[i+1] = (Math.random() - 0.5) * 100 + 20;
+  starPos[i+2] = (Math.random() - 0.5) * 200 - 50;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({color: 0xffffff, size: 0.15, transparent: true, opacity: 0.6});
+const stars = new THREE.Points(starGeo, starMat);
+scene.add(stars);
+
 /* ---- 軌道地板 ---- */
-const trackGeo = new THREE.PlaneGeometry(SPACING*.9, 78);
+const trackGeo = new THREE.PlaneGeometry(SPACING*.9, 90);
 trackGeo.rotateX(-Math.PI/2);
 const trackMat = new THREE.MeshBasicMaterial({
   color:0x111a2e, transparent:true, opacity:.72, side:THREE.DoubleSide
 });
 for (const x of LANE_X) {
   const m = new THREE.Mesh(trackGeo, trackMat);
-  m.position.set(x, 0, -39);
+  m.position.set(x, 0, -45);
   scene.add(m);
 }
 
@@ -489,6 +504,9 @@ function loop(){
   // 判定線呼吸
   const pulse = .75 + Math.sin(performance.now()/400)*.25;
   lineMesh.material.color.setRGB(.55*pulse, .9*pulse, 1*pulse);
+
+  // 星空緩慢旋轉
+  stars.rotation.y += 0.0002;
 
   renderer.render(scene, camera);
 }
