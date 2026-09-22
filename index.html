@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Rhythm Engine Prototype</title>
+<style>
+  html,body{margin:0;padding:0;overflow:hidden;background:#05060a;
+    font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;color:#fff;
+    -webkit-user-select:none;user-select:none;touch-action:none;}
+  canvas{display:block;}
+
+  #hud{position:fixed;top:14px;left:16px;z-index:20;pointer-events:none;
+    text-shadow:0 2px 8px #000;line-height:1.5;font-size:14px;}
+  #hud .score{font-size:28px;font-weight:800;letter-spacing:1px;}
+  #hud .combo{font-size:18px;color:#7fe7ff;font-weight:700;}
+
+  #judge{position:fixed;left:50%;top:52%;transform:translate(-50%,-50%);
+    z-index:20;pointer-events:none;font-size:40px;font-weight:900;
+    letter-spacing:2px;opacity:0;text-shadow:0 0 18px currentColor;}
+  @keyframes pop{
+    0%{opacity:0;transform:translate(-50%,-50%) scale(.6);}
+    20%{opacity:1;transform:translate(-50%,-50%) scale(1.08);}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(1);}
+  }
+
+#zones{
+  position:fixed;left:0;right:0;bottom:0;height:38%;display:flex;
+  z-index:10;
+}
+#zones .tz{
+  flex:1;
+  pointer-events:auto;
+  touch-action:none;
+}
+  #menu{position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:18px;
+    background:radial-gradient(circle at 50% 40%,#131a2e,#05060a 70%);}
+  #menu h1{margin:0;font-size:32px;letter-spacing:4px;
+    background:linear-gradient(90deg,#5ad2ff,#a87bff,#ff5f8f);
+    -webkit-background-clip:text;background-clip:text;color:transparent;}
+  #menu p{margin:0;color:#8b93a7;font-size:14px;letter-spacing:1px;}
+  #menu button{margin-top:12px;padding:14px 52px;border:0;border-radius:999px;
+    font-size:17px;font-weight:800;letter-spacing:2px;cursor:pointer;color:#04121a;
+    background:linear-gradient(90deg,#5ad2ff,#a87bff);
+    box-shadow:0 0 32px rgba(90,210,255,.5);transition:transform .12s;}
+  #menu button:active{transform:scale(.95);}
+  #result{display:none;text-align:center;line-height:1.9;}
+  #result .big{font-size:42px;font-weight:900;color:#7fe7ff;}
+  #result .row{font-size:15px;color:#aab2c4;}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="score" id="score">0</div>
+  <div class="combo" id="combo"></div>
+</div>
+
+<div id="judge"></div>
+
+<div id="zones">
+  <div class="tz" data-lane="0"></div>
+  <div class="tz" data-lane="1"></div>
+  <div class="tz" data-lane="2"></div>
+  <div class="tz" data-lane="3"></div>
+</div>
+
+<div id="menu">
+  <h1>RHYTHM ENGINE</h1>
+  <p>D · F · J · K ／ 點擊下方四區</p>
+  <button id="startBtn">開 始</button>
+  <div id="result">
+    <div class="big" id="rScore">0</div>
+    <div class="row" id="rDetail"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* =========================================================
+   常數
+========================================================= */
+const LANES      = 4;
+const LANE_COLOR = [0x5ad2ff, 0xa87bff, 0xffc93c, 0xff5f8f];
+const SPACING    = 2.4;
+const LANE_X     = Array.from({length:LANES}, (_,i)=> (i-(LANES-1)/2)*SPACING);
+const SPEED      = 15;          // 每秒移動多少世界單位
+const BPM        = 128;
+const SPB        = 60/BPM;
+const LEAD       = 1.0;         // 音樂前奏秒數
+
+/* =========================================================
+   3D 場景
+========================================================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05060a);
+scene.fog = new THREE.Fog(0x05060a, 35, 95);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, .1, 300);
+camera.position.set(0, 6.5, 17);
+camera.lookAt(0, .5, -14);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, .75));
+const key = new THREE.DirectionalLight(0xbfd8ff, 1.4);
+key.position.set(6, 22, 12);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xff5f8f, .7);
+rim.position.set(-10, 6, -10);
+scene.add(rim);
+
+/* ---- 軌道地板 ---- */
+const trackGeo = new THREE.PlaneGeometry(SPACING*.9, 78);
+trackGeo.rotateX(-Math.PI/2);
+const trackMat = new THREE.MeshBasicMaterial({
+  color:0x111a2e, transparent:true, opacity:.72, side:THREE.DoubleSide
+});
+for (const x of LANE_X) {
+  const m = new THREE.Mesh(trackGeo, trackMat);
+  m.position.set(x, 0, -39);
+  scene.add(m);
+}
+
+/* ---- 判定線 ---- */
+const lineMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(SPACING*LANES + 1.2, .06, .45),
+  new THREE.MeshBasicMaterial({ color:0x8fe9ff })
+);
+lineMesh.position.set(0, .03, 0);
+scene.add(lineMesh);
+
+/* ---- 每軌的感應塊 ---- */
+const pads = LANE_X.map((x,i)=>{
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(SPACING*.85, .12, .85),
+    new THREE.MeshBasicMaterial({ color:LANE_COLOR[i], transparent:true, opacity:.28 })
+  );
+  m.position.set(x, .04, 0);
+  scene.add(m);
+  return m;
+});
+
+/* =========================================================
+   音訊 —— 程序化產生一首 128BPM 的原創節拍
+========================================================= */
+function midiToFreq(m){ return 440 * Math.pow(2, (m-69)/12); }
+
+function env(oc, dest, t, attack, decay, peak){
+  const g = oc.createGain();
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t+attack);
+  g.gain.exponentialRampToValueAtTime(.0001, t+attack+decay);
+  g.connect(dest);
+  return g;
+}
+function noiseBuf(oc){
+  if (oc.__nb) return oc.__nb;
+  const len = Math.ceil(oc.sampleRate*.5);
+  const b = oc.createBuffer(1, len, oc.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i=0;i<len;i++) d[i] = Math.random()*2-1;
+  oc.__nb = b; return b;
+}
+function kick(oc, dest, t){
+  const o = oc.createOscillator(); o.type='sine';
+  o.frequency.setValueAtTime(165, t);
+  o.frequency.exponentialRampToValueAtTime(46, t+.11);
+  o.connect(env(oc, dest, t, .004, .28, .95));
+  o.start(t); o.stop(t+.4);
+}
+function snare(oc, dest, t){
+  const n = oc.createBufferSource(); n.buffer = noiseBuf(oc);
+  const f = oc.createBiquadFilter(); f.type='highpass'; f.frequency.value=1300;
+  n.connect(f); f.connect(env(oc, dest, t, .003, .16, .30));
+  n.start(t); n.stop(t+.3);
+  const o = oc.createOscillator(); o.type='triangle'; o.frequency.value=190;
+  o.connect(env(oc, dest, t, .003, .09, .22));
+  o.start(t); o.stop(t+.2);
+}
+function hat(oc, dest, t, peak){
+  const n = oc.createBufferSource(); n.buffer = noiseBuf(oc);
+  const f = oc.createBiquadFilter(); f.type='highpass'; f.frequency.value=7500;
+  n.connect(f); f.connect(env(oc, dest, t, .001, .055, peak));
+  n.start(t); n.stop(t+.12);
+}
+function bassNote(oc, dest, t, freq, dur){
+  const o = oc.createOscillator(); o.type='sawtooth'; o.frequency.value=freq;
+  const f = oc.createBiquadFilter(); f.type='lowpass'; f.Q.value=7;
+  f.frequency.setValueAtTime(700, t);
+  f.frequency.exponentialRampToValueAtTime(170, t+dur);
+  o.connect(f); f.connect(env(oc, dest, t, .008, dur, .32));
+  o.start(t); o.stop(t+dur+.1);
+}
+function pluck(oc, dest, t, freq, peak){
+  const o = oc.createOscillator(); o.type='triangle'; o.frequency.value=freq;
+  o.connect(env(oc, dest, t, .004, .22, peak));
+  o.start(t); o.stop(t+.35);
+}
+
+async function buildSong(ac){
+  const BARS = 16;
+  const total = LEAD + BARS*4*SPB + 2.5;
+  const oc = new OfflineAudioContext(2, Math.ceil(ac.sampleRate*total), ac.sampleRate);
+  const master = oc.createGain(); master.gain.value = .62; master.connect(oc.destination);
+
+  const roots = [45, 41, 43, 40];      // Am - F - G - E
+  const scale = [0, 3, 5, 7, 10, 12, 15];
+
+  for (let bar = 0; bar < BARS; bar++){
+    const bs = LEAD + bar*4*SPB;
+    const root = roots[bar % roots.length];
+
+    for (let b = 0; b < 4; b++){
+      const t = bs + b*SPB;
+      if (b === 0 || b === 2) kick(oc, master, t);
+      if (b === 1 || b === 3) snare(oc, master, t);
+      hat(oc, master, t, .15);
+      hat(oc, master, t + SPB*.5, .09);
+    }
+    for (let e = 0; e < 8; e++){
+      const t = bs + e*SPB*.5;
+      bassNote(oc, master, t, midiToFreq(root + (e%4===2 ? 12 : 0)), SPB*.42);
+    }
+    if (bar >= 4){
+      for (let e = 0; e < 8; e++){
+        const t = bs + e*SPB*.5;
+        pluck(oc, master, t, midiToFreq(root + 12 + scale[e % scale.length]), .075);
+      }
+    }
+  }
+  return await oc.startRendering();
+}
+
+/* =========================================================
+   譜面
+========================================================= */
+function buildChart(){
+  const notes = [];
+  const seq = [0,1,2,3,2,1,0,2, 3,2,1,0,1,2,3,1];
+  const TOTAL = 64;
+
+  for (let i = 0; i < TOTAL; i++){
+    const t    = LEAD + i*SPB;
+    const bar  = Math.floor(i/4);
+    const beat = i % 4;
+
+    if (bar < 1 && beat !== 0) continue;      // 開場留白
+
+    const lane = seq[i % seq.length];
+
+    if (i > 8 && i % 8 === 4){
+      notes.push({ lane, time:t, type:'hold', dur: SPB*2 });
+    } else {
+      notes.push({ lane, time:t, type:'tap' });
+    }
+
+    // 八分音符加花
+    if (bar >= 2 && beat % 2 === 1 && i % 8 !== 4){
+      notes.push({ lane:(lane+2)%4, time: t + SPB*.5, type:'tap' });
+    }
+  }
+  notes.sort((a,b)=>a.time-b.time);
+  return notes;
+}
+
+/* =========================================================
+   遊戲狀態
+========================================================= */
+const state = {
+  ctx:null, buffer:null, source:null,
+  t0:0, running:false,
+  notes:[], objs:[],
+  score:0, combo:0, maxCombo:0,
+  counts:{ PERFECT:0, GREAT:0, GOOD:0, MISS:0 },
+  ended:false,
+};
+const fx = [];
+
+function now(){
+  if (!state.running) return -999;
+  return state.ctx.currentTime - state.t0;
+}
+
+/* =========================================================
+   建立音符物件
+========================================================= */
+const NOTE_GEO = new THREE.BoxGeometry(SPACING*.78, .34, 1);
+
+function makeNoteObjects(){
+  for (const o of state.objs) scene.remove(o.mesh);
+  state.objs = [];
+
+  for (const n of state.notes){
+    const col = LANE_COLOR[n.lane];
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: col,
+      emissiveIntensity: n.type === 'hold' ? .85 : 1.5,
+      roughness: .35, metalness: .1,
+    });
+    const mesh = new THREE.Mesh(NOTE_GEO, mat);
+    mesh.visible = false;
+    scene.add(mesh);
+    state.objs.push({ note:n, mesh, judged:false, dead:false, deadAt:0 });
+  }
+}
+
+/* =========================================================
+   輸入
+========================================================= */
+const KEYMAP = { KeyD:0, KeyF:1, KeyJ:2, KeyK:3 };
+
+function hitLane(lane){
+  if (!state.running || state.ended) return;
+  const t = now();
+
+  // pad 閃爍
+  pads[lane].material.opacity = .95;
+  setTimeout(()=>{ pads[lane].material.opacity = .28; }, 90);
+
+  let best = null, bestDt = Infinity;
+  for (const o of state.objs){
+    if (o.judged || o.dead) continue;
+    if (o.note.lane !== lane) continue;
+    const dt = Math.abs(o.note.time - t);
+    if (dt < bestDt && dt <= .16){ best = o; bestDt = dt; }
+  }
+
+  if (!best){
+    // 空打：不扣分，只給點回饋
+    return;
+  }
+
+  let label, color;
+  if (bestDt <= .05)      { label='PERFECT'; color='#ffd15c'; }
+  else if (bestDt <= .10) { label='GREAT';   color='#7fe7ff'; }
+  else                    { label='GOOD';    color='#a8ff9b'; }
+
+  judgeNote(best, label, color);
+}
+
+function judgeNote(obj, label, color){
+  obj.judged = true;
+  obj.dead   = true;
+  obj.deadAt = now();
+
+  state.counts[label]++;
+  if (label === 'MISS'){
+    state.combo = 0;
+  } else {
+    state.combo++;
+    state.maxCombo = Math.max(state.maxCombo, state.combo);
+    const mult = { PERFECT:1, GREAT:.7, GOOD:.4 }[label];
+    state.score += Math.round(1000 * mult * (1 + Math.min(state.combo,50)/100));
+  }
+
+  showJudge(label, color);
+  if (label !== 'MISS') spawnFX(obj.note.lane);
+  updateHUD();
+}
+
+document.addEventListener('keydown', e=>{
+  if (e.repeat) return;
+  const lane = KEYMAP[e.code];
+  if (lane !== undefined){ e.preventDefault(); hitLane(lane); }
+});
+
+document.querySelectorAll('#zones .tz').forEach(el=>{
+  const lane = +el.dataset.lane;
+  el.addEventListener('pointerdown', e=>{ e.preventDefault(); hitLane(lane); });
+});
+
+/* =========================================================
+   特效
+========================================================= */
+function spawnFX(lane){
+  const geo = new THREE.RingGeometry(.55, 1.0, 28);
+  const mat = new THREE.MeshBasicMaterial({
+    color: LANE_COLOR[lane], transparent:true, opacity:1,
+    side:THREE.DoubleSide, depthWrite:false
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.rotation.x = -Math.PI/2;
+  m.position.set(LANE_X[lane], .06, 0);
+  scene.add(m);
+  fx.push({ mesh:m, life:1 });
+}
+
+/* =========================================================
+   HUD
+========================================================= */
+const $score = document.getElementById('score');
+const $combo = document.getElementById('combo');
+const $judge = document.getElementById('judge');
+
+function updateHUD(){
+  $score.textContent = state.score.toLocaleString();
+  $combo.textContent = state.combo >= 2 ? state.combo + ' COMBO' : '';
+}
+function showJudge(text, color){
+  $judge.textContent = text;
+  $judge.style.color = color;
+  $judge.style.animation = 'none';
+  void $judge.offsetWidth;
+  $judge.style.animation = 'pop .42s ease-out';
+}
+
+/* =========================================================
+   主循環
+========================================================= */
+const clock = new THREE.Clock();
+
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), .05);
+
+  if (state.running && !state.ended){
+    const t = now();
+
+    for (const o of state.objs){
+      const n = o.note;
+
+      // 死亡縮小
+      if (o.dead){
+        const k = (t - o.deadAt) / .22;
+        if (k >= 1){ o.mesh.visible = false; continue; }
+        const s = 1 - k;
+        o.mesh.scale.set(s, s, s);
+        o.mesh.material.opacity = s;
+        o.mesh.material.transparent = true;
+      }
+
+      if (o.judged && !o.dead) continue;
+
+      const zHead = -(n.time - t) * SPEED;
+
+      if (n.type === 'hold'){
+        const zTail = -(n.time + n.dur - t) * SPEED;
+        const len = Math.max(.9, zHead - zTail);
+        o.mesh.position.set(LANE_X[n.lane], .18, (zHead + zTail)/2);
+        o.mesh.scale.z = len;
+      } else {
+        o.mesh.position.set(LANE_X[n.lane], .18, zHead);
+        o.mesh.scale.z = .9;
+      }
+
+      const vis = zHead < 6 && zHead > -78;
+      o.mesh.visible = vis && !(o.dead);
+
+      // 過期 MISS
+      if (!o.judged && t > n.time + .16){
+        judgeNote(o, 'MISS', '#ff5f8f');
+      }
+    }
+
+    // 結束判定
+    const last = state.notes[state.notes.length-1];
+    if (last && t > last.time + 2.2){
+      endGame();
+    }
+  }
+
+  // 特效更新
+  for (let i = fx.length-1; i >= 0; i--){
+    const f = fx[i];
+    f.life -= dt / .45;
+    if (f.life <= 0){
+      scene.remove(f.mesh);
+      f.mesh.geometry.dispose();
+      f.mesh.material.dispose();
+      fx.splice(i,1);
+      continue;
+    }
+    const s = 1 + (1-f.life) * 2.2;
+    f.mesh.scale.set(s, s, s);
+    f.mesh.material.opacity = f.life;
+  }
+
+  // 判定線呼吸
+  const pulse = .75 + Math.sin(performance.now()/400)*.25;
+  lineMesh.material.color.setRGB(.55*pulse, .9*pulse, 1*pulse);
+
+  renderer.render(scene, camera);
+}
+loop();
+
+/* =========================================================
+   開始 / 結束
+========================================================= */
+const $menu   = document.getElementById('menu');
+const $result = document.getElementById('result');
+const $rScore = document.getElementById('rScore');
+const $rDetail= document.getElementById('rDetail');
+
+async function startGame(){
+  $menu.style.display = 'none';
+
+  if (!state.ctx) state.ctx = new AudioContext();
+  await state.ctx.resume();
+
+  if (!state.buffer){
+    $judge.textContent = 'LOADING';
+    $judge.style.color = '#8b93a7';
+    $judge.style.animation = 'pop .6s ease-out';
+    state.buffer = await buildSong(state.ctx);
+  }
+
+  // 重置
+  state.notes = buildChart();
+  makeNoteObjects();
+  state.score = 0; state.combo = 0; state.maxCombo = 0;
+  state.counts = { PERFECT:0, GREAT:0, GOOD:0, MISS:0 };
+  state.ended = false;
+  updateHUD();
+
+  const src = state.ctx.createBufferSource();
+  src.buffer = state.buffer;
+  const gain = state.ctx.createGain();
+  gain.gain.value = .9;
+  src.connect(gain); gain.connect(state.ctx.destination);
+  const t0 = state.ctx.currentTime + .18;
+  src.start(t0);
+
+  state.source  = src;
+  state.t0      = t0;
+  state.running = true;
+}
+
+function endGame(){
+  state.ended = true;
+  state.running = false;
+
+  const total = state.notes.length;
+  const c = state.counts;
+  const acc = total
+    ? ((c.PERFECT + c.GREAT*.7 + c.GOOD*.4) / total * 100)
+    : 0;
+
+  $rScore.textContent = state.score.toLocaleString();
+  $rDetail.innerHTML =
+    `PERFECT ${c.PERFECT} ／ GREAT ${c.GREAT} ／ GOOD ${c.GOOD} ／ MISS ${c.MISS}<br>` +
+    `MAX COMBO ${state.maxCombo} ・ 準確率 ${acc.toFixed(1)}%`;
+
+  setTimeout(()=>{
+    $menu.style.display = 'flex';
+    $result.style.display = 'block';
+    document.getElementById('startBtn').textContent = '再 玩 一 次';
+  }, 700);
+}
+
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  $result.style.display = 'none';
+  startGame();
+});
+
+/* =========================================================
+   Resize
+========================================================= */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
